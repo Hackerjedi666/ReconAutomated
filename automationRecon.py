@@ -33,14 +33,6 @@ def perform_ping(ip, filename):
    except subprocess.CalledProcessError:
        print_to_file(filename, "[-] Host is unreachable")
 
-def nmap_scan(ip, filename):
-   try:
-       output = subprocess.check_output(["nmap", "-sV", "-vvv", "-Pn", "-A", ip]).decode()
-       print_to_file(filename, "Nmap Scan Results:")
-       print_to_file(filename, output)
-   except subprocess.CalledProcessError:
-       print_to_file(filename, "[-] Nmap scan failed")
-
 def nikto_scan(ip, filename):
    try:
        output = subprocess.check_output(["nikto", "-h", ip]).decode()
@@ -51,19 +43,12 @@ def nikto_scan(ip, filename):
 
 def rustscan(ip, filename):
    try:
-       output = subprocess.check_output(["rustscan", "-a", ip]).decode()
+       output = subprocess.check_output(["rustscan", "-a", ip, "-sV", "-vvv", "-Pn", "-A", "--ulimit", "5000", "-b", "65535"]).decode()
        print_to_file(filename, "RustScan Results:")
        print_to_file(filename, output)
    except subprocess.CalledProcessError:
        print_to_file(filename, "[-] RustScan failed")
 
-def bettercap(ip, filename):
-   try:
-       output = subprocess.check_output(["bettercap", "-t", ip]).decode()
-       print_to_file(filename, "Bettercap Results:")
-       print_to_file(filename, output)
-   except subprocess.CalledProcessError:
-       print_to_file(filename, "[-] Bettercap failed")
 def web_app_scan(url):
    try:
        # Send a GET request to the target URL
@@ -229,17 +214,20 @@ def web_app_scan(url):
    except requests.exceptions.RequestException as e:
        print("[-] An error occurred while performing the web application scan:")
        print(str(e))
+
 def social_media_recon(company, filename):
    try:
        print_to_file(filename, f"[+] Searching for {company} on social media...")
        
        twitter_url = f"https://twitter.com/search?q={company}"
        twitter_response = requests.get(twitter_url)
-       print_to_file(filename, f"[+] Twitter search for {company}: {twitter_url}")
+       if twitter_response.status_code == 200:
+           print_to_file(filename, f"[+] Twitter profile found: {twitter_url}")
        
-       linkedin_url = f"https://www.linkedin.com/search/results/companies/?keywords={company}"
+       linkedin_url = f"https://www.linkedin.com/company/{company}"
        linkedin_response = requests.get(linkedin_url)
-       print_to_file(filename, f"[+] LinkedIn search for {company}: {linkedin_url}")
+       if linkedin_response.status_code == 200:
+           print_to_file(filename, f"[+] LinkedIn profile found: {linkedin_url}")
        
        facebook_url = f"https://www.facebook.com/search/top/?q={company}"
        facebook_response = requests.get(facebook_url)
@@ -261,13 +249,15 @@ def email_harvesting(domain, filename):
        response = requests.get(url)
        soup = BeautifulSoup(response.text, "html.parser")
        emails = set(re.findall(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", soup.get_text()))
-       print_to_file(filename, f"[+] Found {len(emails)} email addresses:")
-       for email in emails:
-           print_to_file(filename, email)
-           
+       if emails:
+           print_to_file(filename, f"[+] Found {len(emails)} email address(es):")
+           for email in emails:
+               print_to_file(filename, email)
+       
    except requests.exceptions.RequestException as e:
        print_to_file(filename, "[-] An error occurred while performing email harvesting:")
        print_to_file(filename, str(e))
+
 
 def subdomain_enumeration(domain, filename):
    try:
@@ -281,9 +271,10 @@ def subdomain_enumeration(domain, filename):
            subdomain = cert_data.text.strip().split("\n")[0]
            if subdomain.endswith(domain) and "*" not in subdomain:
                subdomains.add(subdomain)
-       print_to_file(filename, f"[+] Found {len(subdomains)} subdomains:")
-       for subdomain in subdomains:
-           print_to_file(filename, subdomain)
+       if subdomains:
+           print_to_file(filename, f"[+] Found {len(subdomains)} subdomain(s):")
+           for subdomain in subdomains:
+               print_to_file(filename, subdomain)
        
    except requests.exceptions.RequestException as e:
        print_to_file(filename, "[-] An error occurred while performing subdomain enumeration:")
@@ -339,44 +330,78 @@ def wireless_recon(filename):
    finally:
        subprocess.call(["airmon-ng", "stop", "wlan0mon"])
 
+def get_company_name(target):
+    if target.startswith("http://") or target.startswith("https://"):
+        parsed_url = urlparse(target)
+        domain = parsed_url.netloc
+    else:
+        domain = target
+
+    company_name = domain.split(".")[0]
+    return company_name
+
 def main():
-   parser = argparse.ArgumentParser(description="Reconnaissance Tool")
-   parser.add_argument("target", help="Target IP address or domain")
-   parser.add_argument("-o", "--output", default="recon_results.txt", help="Output file to store the results")
-   args = parser.parse_args()
+    parser = argparse.ArgumentParser(description="Reconnaissance Tool")
+    parser.add_argument("target", help="Target IP address or domain")
+    parser.add_argument("-o", "--output", default="recon_results.txt", help="Output file to store the results")
+    args = parser.parse_args()
 
-   ip = args.target
-   filename = args.output
+    target = args.target
+    filename = args.output
 
-   threads = []
+    if target.startswith("http://") or target.startswith("https://"):
+        parsed_url = urlparse(target)
+        ip = socket.gethostbyname(parsed_url.netloc)
+        domain = parsed_url.netloc
+    else:
+        ip = target
+        try:
+            domain = socket.gethostbyaddr(ip)[0]
+        except socket.herror:
+            domain = ip
 
-   whois_thread = threading.Thread(target=perform_whois, args=(ip, filename))
-   dns_thread = threading.Thread(target=perform_dns_lookup, args=(ip, filename))
-   ping_thread = threading.Thread(target=perform_ping, args=(ip, filename))
-   nmap_thread = threading.Thread(target=nmap_scan, args=(ip, filename))
-   nikto_thread = threading.Thread(target=nikto_scan, args=(ip, filename))
-   rustscan_thread = threading.Thread(target=rustscan, args=(ip, filename))
-   bettercap_thread = threading.Thread(target=bettercap, args=(ip, filename))
-   web_app_thread = threading.Thread(target=web_app_scan, args=(f"http://{ip}", filename))
-   social_media_thread = threading.Thread(target=social_media_recon, args=("CompanyName", filename))
-   email_harvesting_thread = threading.Thread(target=email_harvesting, args=("company.com", filename))
-   subdomain_thread = threading.Thread(target=subdomain_enumeration, args=("company.com", filename))
-   google_dorking_thread = threading.Thread(target=google_dorking, args=("CompanyName", filename))
-   voip_thread = threading.Thread(target=voip_recon, args=(ip, filename))
-   wireless_thread = threading.Thread(target=wireless_recon, args=(filename,))
+    company_name = get_company_name(domain)
 
-   threads.extend([
-       whois_thread, dns_thread, ping_thread, nmap_thread, nikto_thread,
-       rustscan_thread, bettercap_thread, web_app_thread, social_media_thread,
-       email_harvesting_thread, subdomain_thread, google_dorking_thread,
-       voip_thread, wireless_thread
-   ])
+    threads = []
 
-   for thread in threads:
-       thread.start()
+    whois_thread = threading.Thread(target=perform_whois, args=(ip, filename))
+    dns_thread = threading.Thread(target=perform_dns_lookup, args=(ip, filename))
+    ping_thread = threading.Thread(target=perform_ping, args=(ip, filename))
+    nikto_thread = threading.Thread(target=nikto_scan, args=(ip, filename))
+    rustscan_thread = threading.Thread(target=rustscan, args=(ip, filename))
+    web_app_thread = threading.Thread(target=web_app_scan, args=(target, filename))
+    social_media_thread = threading.Thread(target=social_media_recon, args=(company_name, filename))
+    email_harvesting_thread = threading.Thread(target=email_harvesting, args=(domain, filename))
+    subdomain_thread = threading.Thread(target=subdomain_enumeration, args=(domain, filename))
+    google_dorking_thread = threading.Thread(target=google_dorking, args=(company_name, filename))
+    voip_thread = threading.Thread(target=voip_recon, args=(ip, filename))
+    wireless_thread = threading.Thread(target=wireless_recon, args=(filename,))
 
-   for thread in threads:
-       thread.join()
+    threads.extend([
+        whois_thread, dns_thread, ping_thread, nikto_thread,
+        rustscan_thread, web_app_thread, social_media_thread,
+        email_harvesting_thread, subdomain_thread, google_dorking_thread,
+        voip_thread, wireless_thread
+    ])
+
+    for thread in threads:
+        thread.start()
+
+    for thread in threads:
+        thread.join()
 
 if __name__ == "__main__":
-   main()
+    main()
+
+
+
+
+
+
+
+
+
+
+
+
+
