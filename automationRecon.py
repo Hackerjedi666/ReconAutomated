@@ -26,7 +26,11 @@ def perform_dns_lookup(ip, filename):
    except socket.herror:
        print_to_file(filename, "[-] Reverse DNS lookup failed")
 
+
+
+
 def perform_ping(ip, filename):
+   print("----------------------performing ping to check the hosts------------------")      	
    try:
        subprocess.check_output(["ping", "-c", "4", ip])
        print_to_file(filename, "[+] Host is alive")
@@ -392,16 +396,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
